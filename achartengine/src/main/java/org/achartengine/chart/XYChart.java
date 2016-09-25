@@ -79,6 +79,9 @@ public abstract class XYChart extends AbstractChart {
 	private double[] xPixelsPerUnit = new double[0];
 	private double[] yPixelsPerUnit = new double[0];
 
+	private final List<Float> points = new ArrayList<>();
+	private final List<Double> values = new ArrayList<>();
+
 	/**
 	 * The clickable areas for all points. The array index is the series index,
 	 * and the RectF list index is the point index in that series.
@@ -263,79 +266,8 @@ public abstract class XYChart extends AbstractChart {
 			mRenderer.setShowLabels(showXLabels, showYLabels);
 		}
 
-		// use a linked list for these reasons:
-		// 1) Avoid a large contiguous memory allocation
-		// 2) We don't need random seeking, only sequential reading/writing, so
-		// linked list makes sense
-		clickableAreas.clear();
-		for (int i = 0; i < sLength; i++) {
-			XYSeries series = mDataset.getSeriesAt(i);
-			int scale = series.getScaleNumber();
-			if (series.getItemCount() == 0) {
-				continue;
-			}
-			XYSeriesRenderer seriesRenderer = (XYSeriesRenderer) mRenderer.getSeriesRendererAt(i);
+		drawSeries(canvas, paint, left, sLength, bottom, or);
 
-			// int originalValuesLength = series.getItemCount();
-			// int valuesLength = originalValuesLength;
-			// int length = valuesLength * 2;
-
-			List<Float> points = new ArrayList<>();
-			List<Double> values = new ArrayList<>();
-			float yAxisValue = Math.min(bottom, (float) (bottom + yPixelsPerUnit[scale] * minY[scale]));
-			LinkedList<ClickableArea> clickableArea = null;
-
-			synchronized (series) {
-				SortedMap<Double, Double> range = series.getRange(minX[scale], maxX[scale],
-						seriesRenderer.isDisplayBoundingPoints());
-				int startIndex = -1;
-
-				for (Entry<Double, Double> value : range.entrySet()) {
-					double xValue = value.getKey();
-					double yValue = value.getValue();
-					if (startIndex < 0 && (!isNullValue(yValue) || isRenderNullValues())) {
-						startIndex = series.getIndexForKey(xValue);
-					}
-
-					values.add(value.getKey());
-					values.add(value.getValue());
-
-					if (!isNullValue(yValue)) {
-						points.add((float) (left + xPixelsPerUnit[scale] * (xValue - minX[scale])));
-						points.add((float) (bottom - yPixelsPerUnit[scale] * (yValue - minY[scale])));
-					} else if (isRenderNullValues()) {
-						points.add((float) (left + xPixelsPerUnit[scale] * (xValue - minX[scale])));
-						points.add((float) (bottom - yPixelsPerUnit[scale] * (-minY[scale])));
-					} else {
-						if (points.size() > 0) {
-							drawSeries(series, canvas, paint, points, seriesRenderer, yAxisValue, i, or,
-									startIndex);
-							ClickableArea[] clickableAreasForSubSeries = clickableAreasForPoints(points, values,
-									yAxisValue, i, startIndex);
-							if(clickableArea == null) {
-								clickableAreas.put(i, clickableArea = new LinkedList<>());
-							}
-							clickableArea.addAll(Arrays.asList(clickableAreasForSubSeries));
-							points.clear();
-							values.clear();
-							startIndex = -1;
-						}
-					}
-				}
-
-				drawAnnotations(canvas, paint, left, bottom, series, scale, seriesRenderer);
-
-				if (points.size() > 0) {
-					drawSeries(series, canvas, paint, points, seriesRenderer, yAxisValue, i, or, startIndex);
-					ClickableArea[] clickableAreasForSubSeries = clickableAreasForPoints(points, values,
-							yAxisValue, i, startIndex);
-					if(clickableArea == null) {
-						clickableAreas.put(i, clickableArea = new LinkedList<>());
-					}
-					clickableArea.addAll(Arrays.asList(clickableAreasForSubSeries));
-				}
-			}
-		}
 		// draw stuff over the margins so that data doesn't render on these areas
 		drawBackground(mRenderer, canvas, x, bottom, width, height - bottom, paint, true,
 				mRenderer.getMarginsColor());
@@ -389,6 +321,88 @@ public abstract class XYChart extends AbstractChart {
 		}
 		if (rotate) {
 			transform(canvas, angle, true);
+		}
+	}
+
+	private void drawSeries(Canvas canvas, Paint paint, int left, int sLength, int bottom, Orientation or) {
+		// use a linked list for these reasons:
+		// 1) Avoid a large contiguous memory allocation
+		// 2) We don't need random seeking, only sequential reading/writing, so
+		// linked list makes sense
+		clickableAreas.clear();
+		for (int i = 0; i < sLength; i++) {
+			XYSeries series = mDataset.getSeriesAt(i);
+			int scale = series.getScaleNumber();
+			if (series.getItemCount() == 0) {
+				continue;
+			}
+			XYSeriesRenderer seriesRenderer = (XYSeriesRenderer) mRenderer.getSeriesRendererAt(i);
+
+			points.clear();
+			values.clear();
+
+			double xppu = xPixelsPerUnit[scale];
+			double yppu = yPixelsPerUnit[scale];
+			double miny = minY[scale];
+			double minx = minX[scale];
+			double maxx = maxX[scale];
+
+			float yAxisValue = Math.min(bottom, (float) (bottom + yppu * miny));
+			LinkedList<ClickableArea> clickableArea = null;
+
+			synchronized (series) {
+				SortedMap<Double, Double> range = series.getRange(minx, maxx,
+						seriesRenderer.isDisplayBoundingPoints());
+				int startIndex = -1;
+
+				for (Entry<Double, Double> value : range.entrySet()) {
+					double xValue = value.getKey();
+					double yValue = value.getValue();
+					if (startIndex < 0 && (!isNullValue(yValue) || isRenderNullValues())) {
+						startIndex = series.getIndexForKey(xValue);
+					}
+
+					values.add(value.getKey());
+					values.add(value.getValue());
+
+					if (!isNullValue(yValue)) {
+						points.add((float) (left + xppu * (xValue - minx)));
+						points.add((float) (bottom - yppu * (yValue - miny)));
+					} else if (isRenderNullValues()) {
+						points.add((float) (left + xppu * (xValue - minx)));
+						points.add((float) (bottom - yppu * (-miny)));
+					} else {
+						if (points.size() > 0) {
+							drawSeries(series, canvas, paint, points, seriesRenderer, yAxisValue, i, or,
+									startIndex);
+//							ClickableArea[] clickableAreasForSubSeries = clickableAreasForPoints(points, values,
+//									yAxisValue, i, startIndex);
+//							if(clickableArea == null) {
+//								clickableAreas.put(i, clickableArea = new LinkedList<>());
+//							}
+//							clickableArea.addAll(Arrays.asList(clickableAreasForSubSeries));
+							points.clear();
+							values.clear();
+							startIndex = -1;
+						}
+					}
+				}
+
+				drawAnnotations(canvas, paint, left, bottom, series, scale, seriesRenderer);
+
+				if (points.size() > 0) {
+					drawSeries(series, canvas, paint, points, seriesRenderer, yAxisValue, i, or, startIndex);
+//					ClickableArea[] clickableAreasForSubSeries = clickableAreasForPoints(points, values,
+//							yAxisValue, i, startIndex);
+//					if(clickableArea == null) {
+//						clickableAreas.put(i, clickableArea = new LinkedList<>());
+//					}
+//					clickableArea.addAll(Arrays.asList(clickableAreasForSubSeries));
+				}
+			}
+
+			points.clear();
+			values.clear();
 		}
 	}
 

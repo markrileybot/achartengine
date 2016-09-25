@@ -10,9 +10,10 @@ buildscript {
 
 group 'org.achartengine'
 description 'achartengine'
-version '2.0.2-SNAPSHOT'
+version '2.0.2-sigma'
 
 description = 'sigma android messaging api'
+apply plugin: 'maven'
 apply plugin: 'com.android.library'
 
 android {
@@ -34,4 +35,12 @@ android {
         lintConfig file('lint.xml')
 		abortOnError false
 	}
+}
+
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            repository(url: mavenLocal().url)
+        }
+    }
 }
